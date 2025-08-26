@@ -5,18 +5,24 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:lottie/lottie.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key, this.initialDirection = CameraLensDirection.back});
+  const CameraScreen({
+    super.key,
+    this.initialDirection = CameraLensDirection.back,
+  });
+
   final CameraLensDirection initialDirection;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMixin {
+class _CameraScreenState extends State<CameraScreen>
+    with TickerProviderStateMixin {
   static const background = Color(0xFF0B1020);
 
-  // <- update filename if needed (.lottie OR .json)
-  static const String _flipLottiePath = 'assets/icons/lottie_files/camera_flip.lottie';
+  // Update this filename if yours is different (.lottie or .json are both OK)
+  static const String _flipLottiePath =
+      'assets/icons/lottie_files/camera_flip.lottie';
 
   List<CameraDescription> _cameras = const [];
   CameraController? _controller;
@@ -101,12 +107,18 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
     if (_controller == null || !_controller!.value.isInitialized || _busy) return;
     setState(() => _busy = true);
     try {
-      final xfile = await _controller!.takePicture();
+      final file = await _controller!.takePicture();
+
       if (!mounted) return;
-      Navigator.of(context).pop(xfile);
+
+      // Return the captured file to the previous screen.
+      // If you prefer a preview screen, push it here instead.
+      Navigator.of(context).pop(file);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to capture: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to capture: $e')),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -123,19 +135,16 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
   Widget build(BuildContext context) {
     final controller = _controller;
 
-    // Flip button content (safe fallback if asset missing)
-    Widget flipIcon;
-    if (_flipAssetAvailable == true) {
-      flipIcon = Lottie.asset(
-        _flipLottiePath,
-        controller: _flipCtrl,
-        repeat: false,
-        height: 40,
-        width: 40,
-      );
-    } else {
-      flipIcon = const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 32);
-    }
+    // Safe Lottie (falls back to an icon if asset missing)
+    final Widget flipIcon = (_flipAssetAvailable == true)
+        ? Lottie.asset(
+            _flipLottiePath,
+            controller: _flipCtrl,
+            repeat: false,
+            height: 40,
+            width: 40,
+          )
+        : const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 32);
 
     return Scaffold(
       backgroundColor: background,
@@ -144,6 +153,7 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
         elevation: 0,
         title: const Text('Camera'),
         actions: [
+          // Back / Front toggle
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ToggleButtons(
@@ -171,6 +181,7 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
+              // Rounded “viewfinder”
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
@@ -187,6 +198,7 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
                 ),
               ),
               const SizedBox(height: 16),
+              // Bottom controls: Lottie flip + shutter
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -209,7 +221,10 @@ class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMix
                       ),
                       child: Container(
                         margin: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),

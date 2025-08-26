@@ -27,7 +27,6 @@ class OptionsScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Heading
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
@@ -40,13 +39,12 @@ class OptionsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 36),
 
-                // Upload from gallery — now with permission modal
+                // Upload from gallery — with permission modal
                 _FullWidthButton(
                   label: 'Upload an image',
                   onPressed: () async {
-                    final ok = await _ensurePhotosPermission(context);
-                    if (!ok) return;
-                    if (!context.mounted) return;
+                    final allowed = await _ensurePhotosPermission(context);
+                    if (!context.mounted || !allowed) return;
                     await Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const UploadImageScreen()),
                     );
@@ -54,13 +52,12 @@ class OptionsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Use Phone Camera (permission + live camera)
+                // Use camera — with permission modal
                 _FullWidthButton(
                   label: 'Use Phone Camera',
                   onPressed: () async {
-                    final ok = await _ensureCameraPermission(context);
-                    if (!ok) return;
-                    if (!context.mounted) return;
+                    final allowed = await _ensureCameraPermission(context);
+                    if (!context.mounted || !allowed) return;
                     await Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CameraScreen()),
                     );
@@ -74,16 +71,15 @@ class OptionsScreen extends StatelessWidget {
     );
   }
 
-  /// 1) Friendly modal  2) System photo-library/storage permission
+  // ---------- Permissions helpers ----------
+
   Future<bool> _ensurePhotosPermission(BuildContext context) async {
     final proceed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Allow Photo Library Access?'),
-        content: const Text(
-          'Cracktimus needs access to your photos to select an image for analysis.',
-        ),
+        content: const Text('Cracktimus needs access to your photos to select an image for analysis.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Not now')),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Continue')),
@@ -96,46 +92,10 @@ class OptionsScreen extends StatelessWidget {
 
     if (Platform.isIOS) {
       status = await Permission.photos.request();
-      if (status.isGranted || status.isLimited) return true; // iOS “Limited” is OK
-    } else if (Platform.isAndroid) {
-      // Try modern Android 13+ photos permission first; fall back to storage on older versions.
-      status = await Permission.photos.request();
-      if (status.isGranted) return true;
+      if (!context.mounted) return false;
+      if (status.isGranted || status.isLimited) return true;
 
-      final storageStatus = await Permission.storage.request();
-      if (storageStatus.isGranted) return true;
-
-      // Prefer to show settings dialog only if permanently denied on either
-      if (status.isPermanentlyDenied || storageStatus.isPermanentlyDenied) {
-        final open = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Photos Permission Disabled'),
-            content: const Text('Enable photo access in Settings to pick an image.'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open Settings')),
-            ],
-          ),
-        );
-        if (open == true) {
-          await openAppSettings();
-        }
-        return false;
-      }
-
-      // Denied but not permanent
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Photo access denied')),
-      );
-      return false;
-    } else {
-      // Other platforms: allow
-      return true;
-    }
-
-    // iOS denied flow
-    if (status.isPermanentlyDenied || status.isRestricted) {
+      // iOS denied flow
       final open = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -148,15 +108,46 @@ class OptionsScreen extends StatelessWidget {
         ),
       );
       if (open == true) await openAppSettings();
-    } else {
+      return false;
+    }
+
+    if (Platform.isAndroid) {
+      // Android 13+: READ_MEDIA_IMAGES; older: READ_EXTERNAL_STORAGE
+      status = await Permission.photos.request();
+      if (!context.mounted) return false;
+      if (status.isGranted) return true;
+
+      final storageStatus = await Permission.storage.request();
+      if (!context.mounted) return false;
+      if (storageStatus.isGranted) return true;
+
+      if (status.isPermanentlyDenied || storageStatus.isPermanentlyDenied) {
+        final open = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Photos Permission Disabled'),
+            content: const Text('Enable photo access in Settings to pick an image.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Open Settings')),
+            ],
+          ),
+        );
+        if (open == true) await openAppSettings();
+        return false;
+      }
+
+      if (!context.mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Photo access denied')),
       );
+      return false;
     }
-    return false;
+
+    // Other platforms (web/desktop)
+    return true;
   }
 
-  /// Camera permission flow (unchanged)
   Future<bool> _ensureCameraPermission(BuildContext context) async {
     final proceed = await showDialog<bool>(
       context: context,
@@ -173,6 +164,8 @@ class OptionsScreen extends StatelessWidget {
     if (proceed != true) return false;
 
     final status = await Permission.camera.request();
+    if (!context.mounted) return false;
+
     if (status.isGranted) return true;
 
     if (status.isPermanentlyDenied) {
@@ -197,9 +190,9 @@ class OptionsScreen extends StatelessWidget {
   }
 }
 
-// === UI helper ===
+// ---- UI helper ----
 class _FullWidthButton extends StatelessWidget {
-  const _FullWidthButton({required this.label, required this.onPressed});
+  const _FullWidthButton({required this.label, required this.onPressed, super.key});
   final String label;
   final VoidCallback onPressed;
 

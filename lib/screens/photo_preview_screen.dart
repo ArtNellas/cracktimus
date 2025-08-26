@@ -2,9 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class PhotoPreviewScreen extends StatelessWidget {
-  final String imagePath; // local path from camera or gallery
+  const PhotoPreviewScreen({super.key, required this.imagePath});
 
-  const PhotoPreviewScreen({Key? key, required this.imagePath}) : super(key: key);
+  final String imagePath; // local path from camera or gallery
 
   static const background = Color(0xFF0B1020);
   static const primaryBlue = Color(0xFF1E63FF);
@@ -28,10 +28,7 @@ class PhotoPreviewScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   child: AspectRatio(
                     aspectRatio: 3 / 4,
-                    child: Image.file(
-                      File(imagePath),
-                      fit: BoxFit.contain,
-                    ),
+                    child: Image.file(File(imagePath), fit: BoxFit.contain),
                   ),
                 ),
               ),
@@ -46,13 +43,8 @@ class PhotoPreviewScreen extends StatelessWidget {
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white24),
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     child: const Text('Retake / Choose another'),
                   ),
@@ -65,13 +57,8 @@ class PhotoPreviewScreen extends StatelessWidget {
                       backgroundColor: primaryBlue,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     child: const Text('Use this photo'),
                   ),
