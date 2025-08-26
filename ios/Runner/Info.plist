@@ -44,6 +44,8 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select crack images.</string>
 	<true/>
 </dict>
 </plist>
