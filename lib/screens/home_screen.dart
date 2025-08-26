@@ -47,7 +47,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                         textStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
                       ),
-                      child: const Text('Start'),
+                      child: const Text('Start Analysis'),
                     ),
                   ),
                 ),
