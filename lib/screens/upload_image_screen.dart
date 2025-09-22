@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'photo_preview_screen.dart';
+import 'analyze_screen.dart';
 
 class UploadImageScreen extends StatefulWidget {
   const UploadImageScreen({super.key});
@@ -34,17 +35,22 @@ class _UploadImageScreenState extends State<UploadImageScreen> {
     }
   }
 
-  Future<void> _openPreview() async {
+  Future<void> _confirmAndAnalyze() async {
     if (_picked == null) return;
-    final result = await Navigator.of(context).push<String?>(
+
+    // Optional preview screen (allows user to confirm/retake)
+    final String? confirmedPath = await Navigator.of(context).push<String?>(
       MaterialPageRoute(
         builder: (_) => PhotoPreviewScreen(imagePath: _picked!.path),
       ),
     );
-    if (!mounted) return;
-    if (result != null) {
-      Navigator.of(context).pop(result); // return confirmed path
-    }
+    if (!mounted || confirmedPath == null) return;
+
+    // 👉 Push Analyze (loading) screen
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AnalyzeScreen(imagePath: confirmedPath)),
+    );
+    // After Analyze, we stay on Upload screen; user can pick again or back out.
   }
 
   @override
@@ -98,7 +104,7 @@ class _UploadImageScreenState extends State<UploadImageScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _picked != null ? _openPreview : null,
+                    onPressed: _picked != null ? _confirmAndAnalyze : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryBlue,
                       foregroundColor: Colors.white,

@@ -1,15 +1,13 @@
 import 'dart:async';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:lottie/lottie.dart';
 
-class CameraScreen extends StatefulWidget {
-  const CameraScreen({
-    super.key,
-    this.initialDirection = CameraLensDirection.back,
-  });
+import 'analyze_screen.dart';
 
+class CameraScreen extends StatefulWidget {
+  const CameraScreen({super.key, this.initialDirection = CameraLensDirection.back});
   final CameraLensDirection initialDirection;
 
   @override
@@ -17,48 +15,60 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen>
-    with TickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   static const background = Color(0xFF0B1020);
 
-  // Update this filename if yours is different (.lottie or .json are both OK)
-  static const String _flipLottiePath =
-      'assets/icons/lottie_files/camera_flip.lottie';
+  // Lottie flip icon assets (bundle + JSON fallback)
+  static const String _flipLottieBundle = 'assets/icons/lottie_files/camera_flip.lottie';
+  static const String _flipJsonFallback = 'assets/icons/lottie_files/camera_flip.json';
 
   List<CameraDescription> _cameras = const [];
   CameraController? _controller;
-  CameraDescription? _current;
+  CameraLensDirection _currentDir = CameraLensDirection.back;
+
+  bool _switching = false;
+  bool _initializing = true;
+  String? _error;
 
   late final AnimationController _flipCtrl =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
 
-  bool _busy = false;
-  bool? _flipAssetAvailable;
-
   @override
   void initState() {
     super.initState();
-    _checkFlipAsset();
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
-  Future<void> _checkFlipAsset() async {
-    try {
-      await rootBundle.load(_flipLottiePath);
-      if (mounted) setState(() => _flipAssetAvailable = true);
-    } catch (_) {
-      if (mounted) setState(() => _flipAssetAvailable = false);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _flipCtrl.dispose();
+    _disposeController();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_controller == null) return;
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _disposeController();
+    } else if (state == AppLifecycleState.resumed) {
+      _switchTo(_currentDir);
     }
   }
 
   Future<void> _init() async {
     try {
       _cameras = await availableCameras();
-      await _switchTo(widget.initialDirection);
+      _currentDir = widget.initialDirection;
+      await _switchTo(_currentDir);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Camera init failed: $e')),
-      );
+      setState(() {
+        _error = 'Camera init failed: $e';
+        _initializing = false;
+      });
     }
   }
 
@@ -66,175 +76,314 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       return _cameras.firstWhere((c) => c.lensDirection == dir);
     } catch (_) {
-      return _cameras.isNotEmpty ? _cameras.first : null;
+      return null;
+    }
+  }
+
+  Future<void> _disposeController() async {
+    final old = _controller;
+    _controller = null;
+    if (old != null) {
+      try {
+        await old.dispose();
+      } catch (_) {}
     }
   }
 
   Future<void> _switchTo(CameraLensDirection dir) async {
-    final target = _find(dir);
-    if (target == null) return;
-    if (_current?.name == target.name) return;
+    if (_switching) return;
+    _switching = true;
+    setState(() {
+      _initializing = true;
+      _error = null;
+    });
 
-    final prev = _controller;
-    final next = CameraController(
-      target,
-      ResolutionPreset.medium,
+    final desc = _find(dir);
+    if (desc == null) {
+      setState(() {
+        _error = dir == CameraLensDirection.front
+            ? 'Front camera not available on this device.'
+            : 'Back camera not available on this device.';
+        _initializing = false;
+      });
+      _switching = false;
+      return;
+    }
+
+    // Dispose FIRST to avoid driver conflicts (prevents black preview on switch)
+    await _disposeController();
+
+    final format = defaultTargetPlatform == TargetPlatform.android
+        ? ImageFormatGroup.yuv420
+        : ImageFormatGroup.bgra8888;
+
+    final controller = CameraController(
+      desc,
+      ResolutionPreset.medium, // If front feels sluggish, try ResolutionPreset.low
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
+      imageFormatGroup: format,
     );
 
-    setState(() => _controller = next);
     try {
-      await next.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 6));
       if (!mounted) return;
-      setState(() => _current = target);
+      setState(() {
+        _controller = controller;
+        _currentDir = dir;
+        _initializing = false;
+      });
+    } on TimeoutException {
+      await controller.dispose();
+      if (!mounted) return;
+      setState(() {
+        _error = 'Camera took too long to start. Try again.';
+        _initializing = false;
+      });
+    } catch (e) {
+      await controller.dispose();
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not start camera: $e';
+        _initializing = false;
+      });
     } finally {
-      await prev?.dispose();
+      _switching = false;
     }
   }
 
   Future<void> _toggleCamera() async {
+    if (_switching) return;
     try {
       await _flipCtrl.forward(from: 0);
     } catch (_) {}
-    final next = _current?.lensDirection == CameraLensDirection.back
+    final next = _currentDir == CameraLensDirection.back
         ? CameraLensDirection.front
         : CameraLensDirection.back;
     await _switchTo(next);
   }
 
   Future<void> _capture() async {
-    if (_controller == null || !_controller!.value.isInitialized || _busy) return;
-    setState(() => _busy = true);
+    final c = _controller;
+    if (_switching || _initializing || c == null || !c.value.isInitialized) return;
     try {
-      final file = await _controller!.takePicture();
-
+      final file = await c.takePicture();
       if (!mounted) return;
 
-      // Return the captured file to the previous screen.
-      // If you prefer a preview screen, push it here instead.
-      Navigator.of(context).pop(file);
+      // Push the loading-only Analyze screen (placeholder ML time)
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AnalyzeScreen(imagePath: file.path)),
+      );
+      // Back on camera after loading screen is closed.
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to capture: $e')),
       );
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    _flipCtrl.dispose();
-    super.dispose();
+  /// Build the flip icon with safe fallbacks:
+  /// .lottie bundle -> .json animation -> Material icon.
+  Widget _buildFlipIcon() {
+    const double sz = 40;
+    return Lottie.asset(
+      _flipLottieBundle,
+      controller: _flipCtrl,
+      repeat: false,
+      height: sz,
+      width: sz,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stack) {
+        return Lottie.asset(
+          _flipJsonFallback,
+          controller: _flipCtrl,
+          repeat: false,
+          height: sz,
+          width: sz,
+          fit: BoxFit.contain,
+          errorBuilder: (context, _, __) =>
+              const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 32),
+        );
+      },
+    );
+  }
+
+  /// Correct camera preview AR for current orientation (plugin reports landscape size).
+  double _cameraAspectRatio(CameraController c, BoxConstraints box) {
+    final isPortrait = box.maxHeight >= box.maxWidth;
+    final size = c.value.previewSize!;
+    return isPortrait ? (size.height / size.width) : (size.width / size.height);
+  }
+
+  /// Cover the container without stretching (like BoxFit.cover for CameraPreview).
+  Widget _buildCoverPreview(CameraController c, BoxConstraints box) {
+    final parentAR = box.maxWidth / box.maxHeight;
+    final previewAR = _cameraAspectRatio(c, box);
+
+    double width, height;
+    if (parentAR > previewAR) {
+      width = box.maxWidth;
+      height = width / previewAR;
+    } else {
+      height = box.maxHeight;
+      width = height * previewAR;
+    }
+
+    return ClipRect(
+      child: OverflowBox(
+        maxWidth: width,
+        maxHeight: height,
+        child: SizedBox(width: width, height: height, child: CameraPreview(c)),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
+    final c = _controller;
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
 
-    // Safe Lottie (falls back to an icon if asset missing)
-    final Widget flipIcon = (_flipAssetAvailable == true)
-        ? Lottie.asset(
-            _flipLottiePath,
-            controller: _flipCtrl,
-            repeat: false,
-            height: 40,
-            width: 40,
-          )
-        : const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 32);
+    final Widget flipIcon = _buildFlipIcon();
 
     return Scaffold(
       backgroundColor: background,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: background,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text('Camera'),
-        actions: [
-          // Back / Front toggle
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ToggleButtons(
-              isSelected: [
-                _current?.lensDirection == CameraLensDirection.back,
-                _current?.lensDirection == CameraLensDirection.front,
-              ],
-              borderRadius: BorderRadius.circular(12),
-              constraints: const BoxConstraints(minHeight: 36, minWidth: 56),
-              selectedColor: Colors.white,
-              color: Colors.white70,
-              fillColor: const Color(0x331E63FF),
-              onPressed: (index) =>
-                  _switchTo(index == 0 ? CameraLensDirection.back : CameraLensDirection.front),
-              children: const [
-                Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('Back')),
-                Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Text('Front')),
-              ],
+      ),
+      body: Stack(
+        children: [
+          // --- full-bleed preview ---
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  color: Colors.black,
+                  child: _initializing
+                      ? const Center(child: CircularProgressIndicator())
+                      : (_error != null)
+                          ? _ErrorView(message: _error!, onRetry: () => _switchTo(_currentDir))
+                          : (c != null && c.value.isInitialized)
+                              ? LayoutBuilder(builder: (context, box) => _buildCoverPreview(c, box))
+                              : _ErrorView(message: 'Camera not ready.', onRetry: () => _switchTo(_currentDir)),
+                ),
+              ),
             ),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Rounded “viewfinder”
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Container(
-                    color: const Color(0xFF0B1020),
-                    alignment: Alignment.center,
-                    child: (controller != null && controller.value.isInitialized)
-                        ? AspectRatio(
-                            aspectRatio: controller.value.aspectRatio,
-                            child: CameraPreview(controller),
-                          )
-                        : const CircularProgressIndicator(),
+
+          // --- controls overlay: bottom in portrait, right-side rail in landscape ---
+          if (isPortrait)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.28)],
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: _toggleCamera,
+                        iconSize: 40,
+                        tooltip: 'Switch camera',
+                        icon: SizedBox(height: 40, width: 40, child: Center(child: flipIcon)),
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 28),
+                      GestureDetector(onTap: _capture, child: const _Shutter(size: 78)),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              // Bottom controls: Lottie flip + shutter
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    onPressed: _toggleCamera,
-                    tooltip: 'Switch camera',
-                    iconSize: 40,
-                    icon: SizedBox(height: 40, width: 40, child: Center(child: flipIcon)),
-                  ),
-                  const SizedBox(width: 24),
-                  GestureDetector(
-                    onTap: _busy ? null : _capture,
-                    child: Container(
-                      width: 74,
-                      height: 74,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.transparent,
-                        border: Border.all(width: 6, color: const Color(0xFF4C84FF)),
-                      ),
-                      child: Container(
-                        margin: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                        ),
-                      ),
+            )
+          else
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: SafeArea(
+                left: false,
+                child: Container(
+                  width: 96,
+                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.28)],
                     ),
                   ),
-                ],
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: _toggleCamera,
+                        iconSize: 40,
+                        tooltip: 'Switch camera',
+                        icon: SizedBox(height: 40, width: 40, child: Center(child: flipIcon)),
+                        color: Colors.white,
+                      ),
+                      const SizedBox(height: 24),
+                      GestureDetector(onTap: _capture, child: const _Shutter(size: 78)),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class _Shutter extends StatelessWidget {
+  const _Shutter({this.size = 78});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.transparent,
+        border: Border.all(width: 6, color: const Color(0xFF4C84FF)),
+      ),
+      child: Container(
+        margin: const EdgeInsets.all(8),
+        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+      ),
+    );
+  }
+}
+
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(message, style: const TextStyle(color: Colors.white70)),
+        const SizedBox(height: 12),
+        OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+      ]),
     );
   }
 }

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class PhotoPreviewScreen extends StatelessWidget {
   const PhotoPreviewScreen({super.key, required this.imagePath});
 
-  final String imagePath; 
+  final String imagePath; // local path from camera or gallery
 
   static const background = Color(0xFF0B1020);
   static const primaryBlue = Color(0xFF1E63FF);
