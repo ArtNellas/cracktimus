@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
-
 import 'analyze_screen.dart';
+import '../widgets/camera_button.dart';
+import '../widgets/camera_switch.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key, this.initialDirection = CameraLensDirection.back});
@@ -17,10 +17,6 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   static const background = Color(0xFF0B1020);
-
-  // Lottie flip icon assets (bundle + JSON fallback)
-  static const String _flipLottieBundle = 'assets/icons/lottie_files/camera_flip.lottie';
-  static const String _flipJsonFallback = 'assets/icons/lottie_files/camera_flip.json';
 
   List<CameraDescription> _cameras = const [];
   CameraController? _controller;
@@ -182,32 +178,6 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  /// Build the flip icon with safe fallbacks:
-  /// .lottie bundle -> .json animation -> Material icon.
-  Widget _buildFlipIcon() {
-    const double sz = 40;
-    return Lottie.asset(
-      _flipLottieBundle,
-      controller: _flipCtrl,
-      repeat: false,
-      height: sz,
-      width: sz,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stack) {
-        return Lottie.asset(
-          _flipJsonFallback,
-          controller: _flipCtrl,
-          repeat: false,
-          height: sz,
-          width: sz,
-          fit: BoxFit.contain,
-          errorBuilder: (context, _, __) =>
-              const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 32),
-        );
-      },
-    );
-  }
-
   /// Correct camera preview AR for current orientation (plugin reports landscape size).
   double _cameraAspectRatio(CameraController c, BoxConstraints box) {
     final isPortrait = box.maxHeight >= box.maxWidth;
@@ -242,8 +212,6 @@ class _CameraScreenState extends State<CameraScreen>
   Widget build(BuildContext context) {
     final c = _controller;
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-
-    final Widget flipIcon = _buildFlipIcon();
 
     return Scaffold(
       backgroundColor: background,
@@ -295,15 +263,13 @@ class _CameraScreenState extends State<CameraScreen>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      IconButton(
+                      CameraSwitchButton(
                         onPressed: _toggleCamera,
-                        iconSize: 40,
-                        tooltip: 'Switch camera',
-                        icon: SizedBox(height: 40, width: 40, child: Center(child: flipIcon)),
-                        color: Colors.white,
+                        animationController: _flipCtrl,
+                        size: 40,
                       ),
                       const SizedBox(width: 28),
-                      GestureDetector(onTap: _capture, child: const _Shutter(size: 78)),
+                      CameraButton(size: 78, onPressed: _capture),
                     ],
                   ),
                 ),
@@ -329,43 +295,19 @@ class _CameraScreenState extends State<CameraScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      IconButton(
+                      CameraSwitchButton(
                         onPressed: _toggleCamera,
-                        iconSize: 40,
-                        tooltip: 'Switch camera',
-                        icon: SizedBox(height: 40, width: 40, child: Center(child: flipIcon)),
-                        color: Colors.white,
+                        animationController: _flipCtrl,
+                        size: 40,
                       ),
                       const SizedBox(height: 24),
-                      GestureDetector(onTap: _capture, child: const _Shutter(size: 78)),
+                      CameraButton(size: 78, onPressed: _capture),
                     ],
                   ),
                 ),
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _Shutter extends StatelessWidget {
-  const _Shutter({this.size = 78});
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.transparent,
-        border: Border.all(width: 6, color: const Color(0xFF4C84FF)),
-      ),
-      child: Container(
-        margin: const EdgeInsets.all(8),
-        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
       ),
     );
   }

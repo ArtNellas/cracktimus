@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../widgets/save_pdf.dart';
+import '../widgets/return_to_home.dart';
 
 enum CrackGrade { none, slight, moderate, severe }
 
@@ -70,86 +72,111 @@ class ResultsScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: _bg,
         elevation: 0,
-        title: const Text('Results'),
+        automaticallyImplyLeading: false,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Image with overlays
-              ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Container(
-                  width: double.infinity,
-                  color: _tileBg,
-                  padding: const EdgeInsets.all(18),
-                  child: AspectRatio(
-                    aspectRatio: 3 / 4,
-                    child: LayoutBuilder(
-                      builder: (context, box) {
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.file(File(imagePath), fit: BoxFit.contain),
-                            // Draw overlay boxes on top
-                            ...overlays.map((b) {
-                              return _FractionalBorder(
-                                rect: b.fracRect,
-                                color: b.color,
-                                borderWidth: 4,
-                              );
-                            }),
-                          ],
-                        );
-                      },
+        child: Stack(
+          children: [
+            // Main content with top margin to avoid button overlap
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 64, 16, 16),
+              child: Column(
+                children: [
+                  // Image with overlays
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      width: double.infinity,
+                      color: _tileBg,
+                      padding: const EdgeInsets.all(18),
+                      child: AspectRatio(
+                        aspectRatio: 3 / 4,
+                        child: LayoutBuilder(
+                          builder: (context, box) {
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.file(File(imagePath), fit: BoxFit.contain),
+                                // Draw overlay boxes on top
+                                ...overlays.map((b) {
+                                  return _FractionalBorder(
+                                    rect: b.fracRect,
+                                    color: b.color,
+                                    borderWidth: 4,
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-              // Info rows
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0x142244FF),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _InfoRow(
-                      label: 'Crack:',
-                      value: crackPresent ? 'Present' : 'None',
-                      valueStyle: TextStyle(
-                        color: crackPresent ? const Color(0xFF1E63FF) : Colors.white70,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  // Info rows
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0x142244FF),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const SizedBox(height: 6),
-                    _InfoRow(
-                      label: 'Grade:',
-                      value: _gradeText(grade),
-                      valueStyle: TextStyle(
-                        color: gradeColor,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _InfoRow(
+                          label: 'Crack:',
+                          value: crackPresent ? 'Present' : 'None',
+                          valueStyle: TextStyle(
+                            color: crackPresent ? const Color(0xFF1E63FF) : Colors.white70,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _InfoRow(
+                          label: 'Grade:',
+                          value: _gradeText(grade),
+                          valueStyle: TextStyle(
+                            color: gradeColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text('P.O.A.:',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 6),
+                        Text(
+                          _poa(grade),
+                          style: const TextStyle(color: Colors.white70, height: 1.25),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    const Text('P.O.A.:',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
-                    Text(
-                      _poa(grade),
-                      style: const TextStyle(color: Colors.white70, height: 1.25),
-                    ),
-                  ],
-                ),
+                  ),
+                  
+                  // Spacer to push content up
+                  const Spacer(),
+                ],
               ),
-            ],
-          ),
+            ),
+            // Top-left home button
+            Positioned(
+              top: 8,
+              left: 8,
+              child: ReturnToHomeButton(),
+            ),
+            // Top-right PDF button
+            Positioned(
+              top: 8,
+              right: 8,
+              child: SavePdfButton(
+                imagePath: imagePath,
+                crackPresent: crackPresent,
+                grade: _gradeText(grade),
+                overlays: overlays,
+              ),
+            ),
+          ],
         ),
       ),
     );
